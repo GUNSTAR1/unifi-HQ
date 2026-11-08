@@ -4,15 +4,33 @@
  * Einstellungen: /config.json (aus der .env, über Caddy)
  * Login:        /auth/session (Sitzung prüfen und verlängern), /auth/logout
  * Demo ohne Backend: ?demo
+ * iCUE-Widget (Xeneon Edge): window.LZ_REMOTE = { base, key, demo, lite, settings } – Daten vom
+ *   Server unter base, angemeldet mit dem Widget-Schlüssel statt Cookie (siehe edge-widget/).
  */
 (() => {
   'use strict';
+
+  // ---------- Fern-Modus (iCUE-Widget) ----------
+  const REMOTE = (() => {
+    const r = window.LZ_REMOTE;
+    if (!r || (!r.base && !r.demo)) return null;
+    let base = String(r.base || '').trim();
+    if (base && !/^https?:\/\//i.test(base)) base = 'http://' + base;
+    if (base && !/:\d+(\/|$)/.test(base.replace(/^https?:\/\//i, ''))) base = base.replace(/\/*$/, '') + ':8080';
+    if (base && !base.endsWith('/')) base += '/';
+    return { base, key: String(r.key || '').trim(), demo: !!r.demo || !base, lite: !!r.lite, settings: r.settings || {} };
+  })();
+  const srv = path => (REMOTE ? REMOTE.base : '') + path;
+  // fetch zum Server; im Widget mit Schlüssel (ohne Schlüssel kein Header, dann auch kein Preflight)
+  const sfetch = (path, opt = {}) => fetch(srv(path), REMOTE && REMOTE.key
+    ? Object.assign({}, opt, { headers: Object.assign({}, opt.headers, { Authorization: 'Bearer ' + REMOTE.key }) }) : opt);
 
   // ---------- Einstellungen ----------
   const CONFIG = {
     home: { lat: 50.11, lng: 8.68, label: 'Home' },
     gateway: '',
-    wsUrl: (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws',
+    wsUrl: REMOTE ? REMOTE.base.replace(/^http/i, 'ws') + 'ws' + (REMOTE.key ? '?key=' + encodeURIComponent(REMOTE.key) : '')
+      : (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws',
     vlUrl: 'select/logsql/query',
     arcsPerSecond: 10,        // mehr landet in Ticker und Zählern, aber nicht als Bogen
     flightMs: 1700,
@@ -43,7 +61,12 @@
 
   const params = new URLSearchParams(location.search);
   // ?lite: für schwache Anzeigegeräte (Pi-Kiosk) – ohne Relief, Sterne und mit weniger Bögen
-  const lite = params.has('lite');
+  const lite = params.has('lite') || !!(REMOTE && REMOTE.lite);
+  // ?edge: Layout für den Corsair Xeneon Edge (2560 × 720 Touch-Leiste, quer oder hochkant).
+  // Ohne Parameter wird jedes sehr breite oder sehr hohe Fenster (≥ 3 : 1) automatisch erkannt, ?edge=0 schaltet das ab.
+  const edgeParam = REMOTE ? '1' : params.get('edge');
+  const edgeAuto = matchMedia('(min-aspect-ratio: 3/1), (max-aspect-ratio: 1/3)');
+  const edgeOn = () => edgeParam === null ? edgeAuto.matches : edgeParam !== '0';
   const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
   const LOCALE = 'en-GB';   // English labels, 24-hour clock and day-first dates
   const nf = new Intl.NumberFormat(LOCALE);
@@ -61,7 +84,13 @@
     set(k, v) { try { localStorage.setItem('lz.' + k, JSON.stringify(v)); } catch {} }
   };
   // Sitzung abgelaufen o. ä.: zur Login-Seite und danach wieder hierher
-  const toLogin = () => location.replace('login.html?next=' + encodeURIComponent(location.pathname + location.search));
+  let keyRejected = false;
+  const toLogin = () => {
+    if (!REMOTE) return location.replace('login.html?next=' + encodeURIComponent(location.pathname + location.search));
+    showHint('The server rejected the widget key. On the server run ./lagezentrum.sh widget-key and copy the key into the widget settings in iCUE.');
+    keyRejected = true;
+    setStatus('down', 'Widget key rejected');
+  };
   const lq = s => '"' + String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';   // LogsQL-Zeichenkette
   const fmtDur = ms => { ms = +ms || 0; if (!ms) return ''; if (ms < 1000) return '<1 s'; const s = Math.round(ms / 1000);
     if (s < 60) return s + ' s'; const m = Math.floor(s / 60); if (m < 60) return m + ' min ' + (s % 60 ? (s % 60) + ' s' : '');
@@ -74,7 +103,7 @@
     // Globus
     view: 'globe', autoRotate: !reduceMotion, rotateSpeed: 0.3, globeStyle: 'night', relief: true, stars: true, atmosphere: true,
     borders: true, points: true, homeLabel: true, arcHeight: 0.38 };
-  const settings = Object.assign({}, DEFAULT_SETTINGS, store.get('settings', {}));
+  const settings = Object.assign({}, DEFAULT_SETTINGS, store.get('settings', {}), REMOTE ? REMOTE.settings : {});
   if (lite) settings.arcRate = Math.min(settings.arcRate, 4);
 
   // Farbschema, Richtungsfarben, Schriftgröße, Leisten – alles über CSS-Variablen und Klassen
@@ -84,17 +113,58 @@
     Object.assign(COLORS, PALETTES[settings.palette] || PALETTES.default);
     for (const [k, v] of Object.entries(COLORS)) root.style.setProperty('--' + k, v);
     root.style.setProperty('--live', COLORS.in);
-    root.style.setProperty('--ui-zoom', String(settings.uiScale));
+    root.style.setProperty('--ui-zoom', String(settings.uiScale * edgeZoom()));
     root.style.setProperty('--panel-a', String(settings.panelAlpha));
     $('left').hidden = !settings.showLeft; $('right').hidden = !settings.showRight;
     document.body.classList.toggle('no-left', !settings.showLeft);
     document.body.classList.toggle('no-right', !settings.showRight);
+    layoutEdge();
+  }
+
+  // Xeneon Edge: Schrift nach der kurzen Seite skalieren (720 px → 1,25), damit sie bei jeder
+  // Windows-Skalierung physisch gleich groß bleibt; Globus in der Mitte, Statistik links, Ticker rechts
+  // (hochkant: Globus oben, Statistik in der Mitte, Ticker unten).
+  function edgeZoom() { return edgeOn() ? Math.max(0.6, Math.min(innerWidth, innerHeight) / 576) : 1; }
+  function layoutEdge() {
+    const root = document.documentElement, on = edgeOn(), W = innerWidth, H = innerHeight, portrait = H > W;
+    root.classList.toggle('edge', on);
+    root.classList.toggle('edge-portrait', on && portrait);
+    if (!on) return;
+    // kleinere Widget-Plätze in iCUE: erst der Ticker, dann die Statistik weg, der Globus bleibt
+    const long = Math.max(W, H) * (devicePixelRatio || 1);   // Gerätepixel, 2560 = ganze Leiste
+    const g = Math.round(Math.min(W, H) / 60), L = settings.showLeft && long >= 1100, R = settings.showRight && long >= 1700;
+    $('left').hidden = !L; $('right').hidden = !R;
+    const head = Math.ceil(document.querySelector('.topbar').getBoundingClientRect().height);
+    let gl, lb, rb;
+    if (!portrait) {
+      // Breiten wie auf der ganzen Leiste (896 / 525 px bei 720 px Höhe), auf kleineren Plätzen gedeckelt
+      const u = H / 720, rw = R ? Math.round(Math.min(525 * u, W * 0.25)) : 0;
+      const lw = L ? Math.round(Math.min(896 * u, (W - rw) * 0.55)) : 0, top = head;
+      lb = { x: g, y: top, w: lw, h: H - top - g };
+      rb = { x: W - g - rw, y: top, w: rw, h: H - top - g };
+      const gx = L ? g + lw : 0, gr = R ? g + rw : 0;
+      gl = { x: gx, y: 0, w: W - gx - gr, h: H };
+    } else {
+      const rh = R ? Math.round(H * 0.27) : 0, bottom = R ? rh + 2 * g : g;
+      const gh = L ? Math.round(H * 0.34) : H - head - bottom;
+      gl = { x: 0, y: head, w: W, h: gh };
+      lb = { x: g, y: head + gh, w: W - 2 * g, h: H - head - gh - bottom };
+      rb = { x: g, y: H - g - rh, w: W - 2 * g, h: rh };
+    }
+    // Spalten der Statistik: je ~230 CSS-Pixel eine
+    root.style.setProperty('--lcols', String(Math.max(1, Math.min(4, Math.floor(lb.w / edgeZoom() / settings.uiScale / 230)))));
+    for (const [k, r] of Object.entries({ g: gl, l: lb, r: rb }))
+      for (const d of ['x', 'y', 'w', 'h']) root.style.setProperty(`--${k}${d}`, Math.max(0, r[d]) + 'px');
   }
   applyUiSettings();
+  // vor den Größen-Handlern von Globus und Karte registriert, damit die neuen Maße schon gelten
+  // nur bei echter Größenänderung neu legen (eingebettete Ansichten wie iCUE melden resize auch ohne)
+  let lastSize = innerWidth + 'x' + innerHeight;
+  addEventListener('resize', () => { const sz = innerWidth + 'x' + innerHeight; if (sz !== lastSize) { lastSize = sz; applyUiSettings(); } });
 
   // ---------- Filter ----------
   const DEFAULT_FILTERS = { out: true, in: true, blocked: false, internal: false, dns: false };
-  const isDemo = params.has('demo') || location.protocol === 'file:';
+  const isDemo = REMOTE ? REMOTE.demo : params.has('demo') || location.protocol === 'file:';
   const filters = Object.assign({}, DEFAULT_FILTERS, isDemo ? { blocked: true, internal: true } : store.get('filters', {}));
   for (const k of Object.keys(filters)) if (!(k in DEFAULT_FILTERS)) delete filters[k];
 
@@ -159,6 +229,8 @@
     applyGlobeSettings();
 
     addEventListener('resize', resizeGlobe); resizeGlobe();
+    // auch wenn sich nur der Platz ändert (iCUE-Widget, Edge-Layout), nicht das Fenster
+    if (window.ResizeObserver) new ResizeObserver(resizeGlobe).observe(globeEl);
 
     // Unsichtbarer Tab oder flache Karte: nichts rendern
     document.addEventListener('visibilitychange', () => {
@@ -166,7 +238,11 @@
     });
   }
   // versteckt (flache Karte) wäre die Größe 0 – dann beim Umschalten nachholen
-  function resizeGlobe() { if (world && !globeEl.hidden) world.width(globeEl.clientWidth).height(globeEl.clientHeight); }
+  function resizeGlobe() {
+    if (!world || globeEl.hidden) return;
+    const w = globeEl.clientWidth, h = globeEl.clientHeight;
+    if (w && h && (w !== world.width() || h !== world.height())) world.width(w).height(h);
+  }
   const pointRadius = d => 0.12 + Math.min(0.55, Math.log10(d.count + 1) * 0.22);   // in Grad
   function pointLabel(d) {
     const box = el('div');
@@ -451,7 +527,7 @@
   async function vl(q, limit) {
     const body = new URLSearchParams({ query: q });
     if (limit) body.set('limit', String(limit));
-    const r = await fetch(CONFIG.vlUrl, { method: 'POST', body, cache: 'no-store' });
+    const r = await sfetch(CONFIG.vlUrl, { method: 'POST', body, cache: 'no-store' });
     if (r.status === 401) toLogin();
     if (!r.ok) {
       const text = (await r.text()).trim().split('\n').slice(-1)[0] || '';
@@ -636,7 +712,7 @@
         `${nf.format(rows.length)} results` + (rows.length >= CONFIG.historyLimit ? ` (newest ${CONFIG.historyLimit})` : '') + ' · Query: ',
         el('code', null, q)
       );
-      $('vmuiLink').href = 'select/vmui/#/?query=' + encodeURIComponent(q);
+      $('vmuiLink').href = srv('select/vmui/#/?query=' + encodeURIComponent(q));
     } catch (err) {
       if (seq !== searchSeq) return;
       info.classList.add('err');
@@ -690,9 +766,9 @@
   function scheduleReconnect() {
     fails++;
     const wait = Math.min(30, 2 ** Math.min(fails, 5));
-    setStatus('down', `Disconnected · retrying in ${wait} s`);
-    if (fails >= 2) checkSession();   // WebSocket meldet 401 nicht – Sitzung gezielt prüfen
-    if (fails >= 3) showHint('No live stream at /ws. Is the collector running? (docker compose ps)', true);
+    setStatus('down', keyRejected ? 'Widget key rejected' : `Disconnected · retrying in ${wait} s`);
+    if (fails >= 2 && !REMOTE) checkSession();   // WebSocket meldet 401 nicht – Sitzung gezielt prüfen
+    if (fails >= 3 && !keyRejected) showHint('No live stream at /ws. Is the collector running? (docker compose ps)', true);
     reconnectTimer = setTimeout(() => { if (!demoTimer) connect(); }, wait * 1000);
   }
 
@@ -811,13 +887,14 @@
   async function loadNames() {
     if (isDemo) return;
     try {
-      const r = await fetch('api/names', { cache: 'no-store' });
+      const r = await sfetch('api/names', { cache: 'no-store' });
       if (r.status === 401) return toLogin();
       if (r.ok) { names.clear(); (await r.json()).forEach(e => names.set(e.ip, e.name)); }
     } catch {}
   }
   async function saveName(ip, name) {
     if (isDemo) { if (name) names.set(ip, name); else names.delete(ip); return; }
+    if (REMOTE) throw new Error('Names are read-only in the widget. Rename devices in the dashboard in your browser.');
     const r = await fetch('api/names', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ip, name }) });
     const j = await r.json().catch(() => ({}));
     if (r.status === 401) toLogin();
@@ -1636,7 +1713,7 @@
   // Fragt die Sitzung ab und verlängert dabei das Cookie (gleitend, 400 Tage).
   // Ein Kiosk, der nie neu lädt, bleibt so dauerhaft angemeldet.
   async function checkSession() {
-    if (isDemo) return null;
+    if (isDemo || REMOTE) return null;
     try {
       const r = await fetch('auth/session', { cache: 'no-store' });
       if (!r.ok) return null;
@@ -1654,7 +1731,7 @@
   async function loadConfig() {
     if (isDemo) return;
     try {
-      const r = await fetch('config.json', { cache: 'no-store' });
+      const r = await sfetch('config.json', { cache: 'no-store' });
       if (r.status === 401) return toLogin();
       if (!r.ok) return;
       const c = await r.json();
@@ -1672,6 +1749,7 @@
     applyView();
     initCountries();
     applyFilters();
+    if (REMOTE) { $('vmuiLink').hidden = true; $('openSettings').hidden = !!REMOTE.settings.hideGear; }
     if (isDemo) {
       startDemo();
     } else {

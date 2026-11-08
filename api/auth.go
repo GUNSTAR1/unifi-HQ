@@ -9,6 +9,11 @@
 //	GET  /auth/check    -> 204 mit gültiger Sitzung, sonst 302 auf /login.html (Seitenaufrufe)
 //	                       bzw. 401 (fetch, WebSocket, Abfragen)
 //
+// Widget-Schlüssel (WIDGET_KEY, ./lagezentrum.sh widget-key): das iCUE-Widget für den Corsair
+// Xeneon Edge läuft nicht auf derselben Seite und bekommt daher kein Cookie. Es schickt den
+// Schlüssel als "Authorization: Bearer …", beim WebSocket (/ws) als ?key=… (Browser erlauben dort
+// keine eigenen Header). Der Schlüssel gilt nur lesend: /api/names schreiben verlangt sameOrigin.
+//
 // Passwort: PBKDF2-HMAC-SHA256 (Standardbibliothek), Format
 // pbkdf2-sha256:<Iterationen>:<Salz>:<Schlüssel> (Base64url, ohne "$", damit es in der .env
 // nicht von docker compose ersetzt wird). Erzeugt mit "lz-api hash-password" (liest stdin).
@@ -49,6 +54,7 @@ const (
 	defaultIter   = 600_000 // OWASP-Empfehlung für PBKDF2-HMAC-SHA256
 	failDelay     = time.Second
 	maxConcurrent = 2 // gleichzeitige Passwortprüfungen (PBKDF2 kostet CPU)
+	minWidgetKey  = 24
 )
 
 var b64 = base64.RawURLEncoding
@@ -195,6 +201,7 @@ type authCfg struct {
 	bad     error // Passwort-Hash unlesbar: alles gesperrt, bis er repariert ist
 	hash    *pwHash
 	macKey  []byte
+	widget  []byte // WIDGET_KEY, leer = aus
 	lim     *limiter
 	sem     chan struct{}
 	now     func() time.Time
@@ -269,8 +276,36 @@ func (a *authCfg) allowed(r *http.Request) bool {
 	if !a.enabled {
 		return true
 	}
+	if a.widgetOK(r) {
+		return true
+	}
 	_, ok := a.session(r)
 	return ok
+}
+
+// setWidgetKey: zu kurze Schlüssel (< 24 Zeichen) werden ignoriert
+func (a *authCfg) setWidgetKey(k string) bool {
+	k = strings.TrimSpace(k)
+	if len(k) < minWidgetKey {
+		a.widget = nil
+		return false
+	}
+	a.widget = []byte(k)
+	return true
+}
+
+// widgetOK: Bearer-Header, beim WebSocket auch ?key= in der von Caddy weitergereichten URI
+func (a *authCfg) widgetOK(r *http.Request) bool {
+	if len(a.widget) == 0 {
+		return false
+	}
+	k := ""
+	if h := r.Header.Get("Authorization"); len(h) > 7 && strings.EqualFold(h[:7], "Bearer ") {
+		k = strings.TrimSpace(h[7:])
+	} else if u, err := url.ParseRequestURI(r.Header.Get("X-Forwarded-Uri")); err == nil && u.Path == "/ws" {
+		k = u.Query().Get("key")
+	}
+	return k != "" && subtle.ConstantTimeCompare([]byte(k), a.widget) == 1
 }
 
 // Secure nur bei HTTPS – im LAN läuft das Dashboard meist über einfaches HTTP

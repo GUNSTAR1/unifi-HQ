@@ -184,6 +184,13 @@ func main() {
 	s := &store{path: env("HOSTS_FILE", "/config/hosts.csv")}
 	addr := env("LISTEN", "127.0.0.1:8092")
 	auth := newAuth(os.Getenv("AUTH_PASSWORD_HASH"), os.Getenv("AUTH_SECRET"))
+	if k := os.Getenv("WIDGET_KEY"); k != "" {
+		if auth.setWidgetKey(k) {
+			log.Print("Widget-Schlüssel aktiv (iCUE-Widget für den Xeneon Edge)")
+		} else {
+			log.Print("Warnung: WIDGET_KEY zu kurz (mindestens 24 Zeichen) – ignoriert")
+		}
+	}
 	switch {
 	case auth.bad != nil:
 		log.Printf("FEHLER: AUTH_PASSWORD_HASH ungültig (%v) – Dashboard gesperrt, bis ./lagezentrum.sh password ein neues Passwort setzt", auth.bad)

@@ -14,7 +14,8 @@
 <canvas id="flat" hidden role="img" aria-label="Flat world map with live connections"></canvas>
 <div class="flat-tip float-tooltip-kap" id="flatTip" hidden></div>
 
-<header>
+<!-- div statt header-Element: iCUE (Xeneon-Edge-Widget) hält das sonst für das Ende des Kopfs -->
+<div class="topbar" role="banner">
   <h1>Lagezentrum<small id="gwName"></small></h1>
   <div class="status" id="status" data-state="connecting"><span class="dot"></span><span id="statusText">Connecting …</span></div>
   <div class="filters" role="group" aria-label="Filter view">
@@ -78,9 +79,11 @@
     <div class="opt account" id="logoutRow" hidden><button type="button" class="tool" id="logout">Log out</button><small>Logs out this browser only.</small></div>
   </div>
   <div class="clock" id="clock">--:--:--</div>
-</header>
+</div>
 
 <aside class="panel" id="left">
+ <div class="left-cols">
+ <div class="overview">
   <h2>Last 24 hours <span id="statsState"></span></h2>
   <div class="totals">
     <button class="total" data-k="out" data-q="dir:out"><b id="t-out">–</b><span>out <em id="v-out"></em></span></button>
@@ -95,6 +98,7 @@
     <div class="spark" id="spark"></div>
     <div class="spark-axis"><span>−24 h</span><span>now</span></div>
   </section>
+ </div>
 
   <section data-needs="out">
     <h2>Where your traffic goes</h2>
@@ -150,6 +154,7 @@
     <h2>Internal, 24 h</h2>
     <ul class="bars" data-c="internal" id="topInternal"><li class="empty">No data yet</li></ul>
   </section>
+ </div>
 </aside>
 
 <aside class="panel" id="right">

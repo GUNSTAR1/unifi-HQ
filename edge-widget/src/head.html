@@ -1,0 +1,29 @@
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="color-scheme" content="dark" />
+<title>tr('Lagezentrum')</title>
+<link rel="icon" type="image/svg+xml" href="resources/icon.svg" />
+<meta name="x-icue-restrictions" data-restrictions='[{"device":"dashboard_lcd"}]' />
+
+<!-- Server -->
+<meta name="x-icue-property" content="serverUrl" data-label="tr('Server Address')" data-type="textfield" data-default="''" />
+<meta name="x-icue-property" content="widgetKey" data-label="tr('Widget Key')" data-type="textfield" data-default="''" />
+
+<!-- Look -->
+<meta name="x-icue-property" content="mapView" data-label="tr('Map')" data-type="tab-buttons"
+      data-values="[{'key':'globe','value':tr('Globe')},{'key':'flat','value':tr('Flat')}]" data-default="'globe'" />
+<meta name="x-icue-property" content="colorScheme" data-label="tr('Color Scheme')" data-type="tab-buttons"
+      data-values="[{'key':'navy','value':tr('Night Blue')},{'key':'graphite','value':tr('Graphite')},{'key':'black','value':tr('Black')}]" data-default="'navy'" />
+<meta name="x-icue-property" content="autoRotate" data-label="tr('Auto-Rotate Globe')" data-type="switch" data-default="true" />
+<meta name="x-icue-property" content="showStats" data-label="tr('24 h Stats Panel')" data-type="switch" data-default="true" />
+<meta name="x-icue-property" content="showTicker" data-label="tr('Live Ticker Panel')" data-type="switch" data-default="true" />
+<meta name="x-icue-property" content="liteMode" data-label="tr('Lite Mode')" data-type="switch" data-default="false" />
+
+<script id="x-icue-groups" type="application/json">
+[
+  { "title": "tr('Server')", "properties": ["serverUrl", "widgetKey"], "info": "tr('Address of your Lagezentrum server, such as 192.168.1.50 (port 8080 is added if you leave it off). Leave it empty to see demo data. If the dashboard has a login password, run ./lagezentrum.sh widget-key on the server and paste the key here.')" },
+  { "title": "tr('Look')", "properties": ["mapView", "colorScheme", "autoRotate", "showStats", "showTicker", "liteMode"], "info": "tr('Use the full-width slot for the whole layout. Smaller slots hide the ticker first, then the stats. Lite Mode drops relief, stars and country shading and draws fewer arcs, for less GPU load.')" }
+]
+</script>
+
+<link rel="stylesheet" type="text/css" href="app.css" />

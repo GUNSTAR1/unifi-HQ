@@ -5,6 +5,7 @@
 #   ./lagezentrum.sh status       Container, Datenmenge, Ereignisse der letzten Stunde
 #   ./lagezentrum.sh geoip        GeoIP-Datenbanken jetzt aktualisieren (läuft monatlich per Cron)
 #   ./lagezentrum.sh password     Login-Passwort setzen   (password logout = alle abmelden, password off = Login aus)
+#   ./lagezentrum.sh widget-key   Schlüssel fürs iCUE-Widget (Xeneon Edge) zeigen/anlegen (widget-key new | off)
 #   ./lagezentrum.sh update       Images aktualisieren und neu starten
 #   ./lagezentrum.sh logs         Logs aller Container verfolgen
 set -euo pipefail
@@ -251,6 +252,39 @@ cmd_password() {
   c_ok "Login aktiv. Bisherige Anmeldungen sind damit abgemeldet; der Browser bleibt danach 400 Tage angemeldet."
 }
 
+# Schlüssel fürs iCUE-Widget (Corsair Xeneon Edge): ersetzt dort das Login-Cookie, nur lesend
+cmd_widget_key() {
+  need_docker
+  [ -f .env ] || die ".env fehlt – erst ./lagezentrum.sh setup"
+  local key; key=$(env_get WIDGET_KEY)
+  case "${1:-}" in
+    off)
+      env_set WIDGET_KEY ""
+      apply_auth
+      c_ok "Widget-Schlüssel gelöscht – das Widget bekommt jetzt 401"
+      return ;;
+    new) key="" ;;
+    "") ;;
+    *) die "Unbekannte Option: $1 (widget-key | widget-key new | widget-key off)" ;;
+  esac
+  if [ -z "$key" ]; then
+    umask 077
+    key=$(gen_secret)
+    env_set WIDGET_KEY "$key"
+    chmod 600 .env
+    api_image
+    apply_auth
+    c_ok "Neuer Widget-Schlüssel angelegt"
+  fi
+  [ -n "$(env_get AUTH_PASSWORD_HASH)" ] || c_warn "Kein Login-Passwort gesetzt – das Widget braucht den Schlüssel dann gar nicht"
+  local port; port=$(env_get HTTP_PORT); port=${port:-8080}
+  echo
+  echo "  Im iCUE-Widget eintragen:"
+  echo "    Server Address: $(lxc_ip):$port"
+  echo "    Widget Key:     $key"
+  echo
+}
+
 cmd_update() {
   need_docker
   docker compose pull --ignore-buildable
@@ -266,7 +300,8 @@ case "${1:-}" in
   status) cmd_status ;;
   geoip) cmd_geoip ;;
   password) shift; cmd_password "$@" ;;
+  widget-key) shift; cmd_widget_key "$@" ;;
   update) cmd_update ;;
   logs) need_docker; docker compose logs -f --tail 50 ;;
-  *) sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+  *) sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
 esac

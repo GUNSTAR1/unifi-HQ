@@ -91,6 +91,7 @@ services:
       LISTEN: 127.0.0.1:8092
       AUTH_PASSWORD_HASH: ${AUTH_PASSWORD_HASH:-}   # ./lagezentrum.sh password
       AUTH_SECRET: ${AUTH_SECRET:-}
+      WIDGET_KEY: ${WIDGET_KEY:-}                   # ./lagezentrum.sh widget-key (Xeneon-Edge-Widget)
     volumes:
       - ./config:/config
     depends_on: [collector]

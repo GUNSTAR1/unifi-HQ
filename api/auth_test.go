@@ -233,3 +233,34 @@ func TestClientKey(t *testing.T) {
 		t.Fatalf("IPv4: %s", k)
 	}
 }
+
+func TestWidgetKey(t *testing.T) {
+	a, mux, _ := testAuth(t)
+	const key = "widget-key-0123456789abcdef0123"
+	check := func(hdr map[string]string) int { return do(mux, "GET", "/auth/check", "", hdr, nil).Code }
+
+	if check(map[string]string{"Authorization": "Bearer " + key}) != 401 {
+		t.Fatal("ohne gesetzten Widget-Schlüssel darf ein Bearer-Header nichts freigeben")
+	}
+	if a.setWidgetKey("zu-kurz") {
+		t.Fatal("zu kurzer Schlüssel angenommen")
+	}
+	if !a.setWidgetKey(key) {
+		t.Fatal("Schlüssel nicht angenommen")
+	}
+	if c := check(map[string]string{"Authorization": "Bearer " + key}); c != 204 {
+		t.Fatalf("Bearer mit richtigem Schlüssel: %d, erwartet 204", c)
+	}
+	if c := check(map[string]string{"Authorization": "Bearer " + key + "x"}); c != 401 {
+		t.Fatalf("falscher Schlüssel: %d, erwartet 401", c)
+	}
+	if c := check(map[string]string{"X-Forwarded-Uri": "/ws?key=" + key, "Upgrade": "websocket"}); c != 204 {
+		t.Fatalf("WebSocket mit ?key=: %d, erwartet 204", c)
+	}
+	if c := check(map[string]string{"X-Forwarded-Uri": "/select/logsql/query?key=" + key}); c != 401 {
+		t.Fatalf("?key= außerhalb von /ws: %d, erwartet 401", c)
+	}
+	if w := do(mux, "GET", "/api/names", "", map[string]string{"Authorization": "Bearer " + key}, nil); w.Code != 200 {
+		t.Fatalf("Namen lesen mit Widget-Schlüssel: %d", w.Code)
+	}
+}

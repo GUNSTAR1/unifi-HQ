@@ -5,3 +5,7 @@
 # heruntergeladene GeoIP-Datenbanken
 /geoip/*
 !/geoip/.gitkeep
+
+# Xeneon-Edge-Widget: Build-Ausgabe von edge-widget/build.ps1
+edge-widget/Lagezentrum/
+edge-widget/*.icuewidget

@@ -1,0 +1,17 @@
+{
+  "author": "Val Flygare",
+  "id": "com.valflygare.lagezentrum",
+  "name": "Lagezentrum",
+  "description": "Live world map of your UniFi network: every connection through the gateway as an arc on a 3D globe, with a live ticker and 24 h stats. Needs a Lagezentrum server (github.com/GUNSTAR1/unifi-HQ); shows demo data without one.",
+  "version": "1.0.0",
+  "preview_icon": "resources/icon.svg",
+  "min_app_version": "5.46",
+  "min_framework_version": "1.0.0",
+  "os": [
+    { "platform": "windows" }
+  ],
+  "supported_devices": [
+    { "type": "dashboard_lcd" }
+  ],
+  "interactive": true
+}

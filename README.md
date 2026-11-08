@@ -1,5 +1,19 @@
 # Lagezentrum
 
+> **This fork adds a CORSAIR XENEON EDGE version:** an iCUE widget and a
+> layout for the Edge's 2560×720 touch strip.
+> **[⬇ Download the widget (Releases)](https://github.com/GUNSTAR1/unifi-HQ/releases/latest)** ·
+> [Setup guide](edge-widget/README.md) · Original project:
+> [ProfessorQuantumUniverse/unifi-HQ](https://github.com/ProfessorQuantumUniverse/unifi-HQ)
+>
+> The widget needs a Lagezentrum server **built from this fork** if your dashboard has a password, because the
+> read-only widget key only exists here. New install: use
+> `https://github.com/GUNSTAR1/unifi-HQ.git` wherever this README says
+> `ProfessorQuantumUniverse/unifi-HQ` (or set `REPO_URL` for `create-lxc.sh` / `install.sh`).
+> Existing install: see [switching an existing server](edge-widget/README.md#switching-an-existing-server-to-this-fork).
+
+![Lagezentrum on the Xeneon Edge](docs/xeneon-edge.png)
+
 Live world map for your home network. Every connection through your UniFi gateway is drawn as an
 arc over a 3D globe, next to a live ticker, 24 h stats and a searchable history.
 
@@ -224,6 +238,9 @@ Fields: `dir` (out/in/blocked/internal), `leg`, `proto`, `local_ip`, `local_name
 
 URL options: `?demo` (sample data), `?lite` (for weak devices like a Pi kiosk: no relief, stars or
 country fills, fewer arcs).
+
+**Corsair Xeneon Edge:** `?edge` (also automatic in any window wider or taller than 3:1) lays the
+dashboard out for the 2560×720 touch strip. There is also an iCUE widget: see [edge-widget/README.md](edge-widget/README.md).
 
 ![Settings](docs/settings.png)
 

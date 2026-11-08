@@ -43,6 +43,27 @@
 			Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
 		}
 
+		# --- iCUE-Widget (Corsair Xeneon Edge) ------------------------------------
+		# Das Widget läuft in iCUE, nicht auf dieser Seite. Es meldet sich mit dem Widget-Schlüssel
+		# (Authorization: Bearer, siehe api/auth.go) statt mit Cookie. Origin "*" ist hier sicher:
+		# Browser schicken bei "*" keine Cookies mit, ohne Schlüssel bleibt es bei 401.
+		@preflight {
+			method OPTIONS
+			header Access-Control-Request-Method *
+		}
+		header @preflight {
+			Access-Control-Allow-Origin *
+			Access-Control-Allow-Methods "GET, POST"
+			Access-Control-Allow-Headers "Authorization, Content-Type"
+			Access-Control-Max-Age 86400
+		}
+		respond @preflight 204
+		@widget header Authorization "Bearer *"
+		header @widget {
+			defer
+			Access-Control-Allow-Origin *
+		}
+
 		encode zstd gzip
 
 		# --- Login ----------------------------------------------------------------
@@ -68,6 +89,7 @@
 		# Live-Stream von Vector (nur 127.0.0.1:8090)
 		handle /ws {
 			rewrite * /
+			uri query -key
 			reverse_proxy 127.0.0.1:8090
 		}
 
